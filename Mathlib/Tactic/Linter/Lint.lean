@@ -45,14 +45,33 @@ Linter that checks whether a structure should be in Prop.
     unless allProofs do return none
     return m!"all fields are propositional but the structure isn't."
 
-/-- Linter that check that all `deprecated` tags come with `since` dates. -/
+/--
+Check that `date` has the form `YYYY-MM-DD`, the format that Mathlib uses for the `since` field
+of the `deprecated` attribute.
+
+The tooling that removes outdated deprecations (`#clear_deprecations`, driven by the
+`remove_deprecated_decls` workflow) selects deprecations by *string* comparison against a
+date range, so a `since` date in any other format is silently never selected.
+-/
+public def isValidSinceDate (date : String) : Bool :=
+  match date.splitOn "-" with
+  | [year, month, day] =>
+    year.length == 4 && month.length == 2 && day.length == 2 &&
+      year.all Char.isDigit && month.all Char.isDigit && day.all Char.isDigit &&
+      1 ≤ month.toNat! && month.toNat! ≤ 12 && 1 ≤ day.toNat! && day.toNat! ≤ 31
+  | _ => false
+
+/-- Linter that checks that all `deprecated` tags come with `since` dates in `YYYY-MM-DD` form. -/
 @[env_linter] public def deprecatedNoSince : Linter where
-  noErrorsFound := "no `deprecated` tags without `since` dates."
-  errorsFound := "FOUND `deprecated` tags without `since` dates."
+  noErrorsFound := "no `deprecated` tags without well-formed `since` dates."
+  errorsFound := "FOUND `deprecated` tags without well-formed `since` dates."
   test declName := do
     let some info := Lean.Linter.deprecatedAttr.getParam? (← getEnv) declName | return none
     match info.since? with
-    | some _ => return none -- TODO: enforce `YYYY-MM-DD` format
+    | some date =>
+      if isValidSinceDate date then return none
+      else return m!"`deprecated` attribute with `since` date '{date}', \
+        which is not of the form `YYYY-MM-DD`"
     | none => return m!"`deprecated` attribute without `since` date"
 
 end Batteries.Tactic.Lint
